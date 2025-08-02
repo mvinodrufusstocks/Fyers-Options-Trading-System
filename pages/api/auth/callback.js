@@ -1,19 +1,29 @@
 export default async function handler(req, res) {
   try {
+    console.log('Callback received:', req.query);
+    
     const { code, state } = req.query;
     
     if (!code) {
+      console.log('No code in query');
       return res.redirect('/?error=no_code');
     }
 
-    // Get environment variables
     const fyersAppId = process.env.FYERS_APP_ID;
     const fyersSecret = process.env.FYERS_SECRET;
     
+    console.log('Environment check:', {
+      appId: fyersAppId ? 'EXISTS' : 'MISSING',
+      secret: fyersSecret ? 'EXISTS' : 'MISSING'
+    });
+    
     if (!fyersAppId || !fyersSecret) {
-      return res.redirect('/?error=missing_config');
+      console.log('Missing FYERS credentials');
+      return res.redirect('/?error=missing_credentials');
     }
 
+    console.log('Making token request to FYERS...');
+    
     // Exchange authorization code for access token
     const tokenResponse = await fetch('https://api-t1.fyers.in/api/v3/token', {
       method: 'POST',
@@ -28,18 +38,24 @@ export default async function handler(req, res) {
       })
     });
 
+    if (!tokenResponse.ok) {
+      console.log('Token request failed:', tokenResponse.status);
+      return res.redirect('/?error=token_request_failed');
+    }
+
     const tokenData = await tokenResponse.json();
+    console.log('Token response status:', tokenData.s);
     
     if (tokenData.s === 'ok' && tokenData.access_token) {
-      // Store token in a way the frontend can access it
-      // For now, redirect back with success
-      return res.redirect('/?auth=success&token=' + encodeURIComponent(tokenData.access_token));
+      console.log('Authentication successful!');
+      return res.redirect('/?auth=success&message=Connected to FYERS successfully');
     } else {
-      return res.redirect('/?auth=error&message=' + encodeURIComponent(tokenData.message || 'Token exchange failed'));
+      console.log('Token exchange failed:', tokenData);
+      return res.redirect('/?auth=error&message=' + encodeURIComponent(tokenData.message || 'Authentication failed'));
     }
     
   } catch (error) {
-    console.error('OAuth callback error:', error);
-    return res.redirect('/?auth=error&message=' + encodeURIComponent(error.message));
+    console.error('Callback error:', error);
+    return res.redirect('/?auth=error&message=' + encodeURIComponent('System error: ' + error.message));
   }
 }
