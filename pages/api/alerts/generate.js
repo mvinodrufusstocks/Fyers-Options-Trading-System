@@ -58,11 +58,8 @@ export default async function handler(req, res) {
               type: 'GAMMA_SPREAD',
               symbol,
               message: `Gamma Spread: ${current.strike}/${next.strike} ${current.type}`,
-              details: `Spread: ${gammaSpread.toFixed(6)}, Confidence: ${confidence.toFixed(1)}%, Current Γ: ${current.gamma.toFixed(4)}, Next Γ: ${next.gamma.toFixed(4)}`,
-              priority,
-              recommendation: current.gamma > next.gamma ? 
-                `Long Gamma: Buy ${current.strike} ${current.type}, Sell ${next.strike} ${current.type}` :
-                `Short Gamma: Sell ${current.strike} ${current.type}, Buy ${next.strike} ${current.type}`
+              details: `Spread: ${gammaSpread.toFixed(6)}, Confidence: ${confidence.toFixed(1)}%`,
+              priority
             });
           }
         }
@@ -73,7 +70,7 @@ export default async function handler(req, res) {
     const highThetaOptions = optionsWithGreeks
       .filter(option => option.theta <= tradingConfig.thetaDecayMin)
       .sort((a, b) => a.theta - b.theta)
-      .slice(0, 5); // Top 5 theta decay opportunities
+      .slice(0, 5);
 
     highThetaOptions.forEach(option => {
       const priority = option.theta < -0.15 ? 'HIGH' : 'MEDIUM';
@@ -84,13 +81,12 @@ export default async function handler(req, res) {
         type: 'THETA_DECAY',
         symbol,
         message: `High Theta Decay: ${option.strike} ${option.type}`,
-        details: `Theta: ${option.theta.toFixed(4)}/day, IV: ${option.iv}%, Delta: ${option.delta.toFixed(4)}, LTP: ₹${option.ltp}`,
-        priority,
-        recommendation: `Consider selling ${option.type} at ${option.strike} strike for theta decay strategy`
+        details: `Theta: ${option.theta.toFixed(4)}/day, IV: ${option.iv}%`,
+        priority
       });
     });
 
-    // Save alerts to database (but don't fail if it doesn't work)
+    // Save alerts to database
     for (const alert of alerts) {
       try {
         await sql`
@@ -98,38 +94,26 @@ export default async function handler(req, res) {
           VALUES (${alert.id}, ${alert.type}, ${alert.symbol}, ${alert.message}, ${alert.details}, ${alert.priority})
         `;
       } catch (saveError) {
-        console.log('Failed to save alert to database:', saveError.message);
-        // Don't fail the request if database save fails
+        console.log('Failed to save alert:', saveError.message);
       }
     }
 
-    return res.json({ 
-      alerts,
-      summary: {
-        totalAlerts: alerts.length,
-        gammaSpreadAlerts: alerts.filter(a => a.type === 'GAMMA_SPREAD').length,
-        thetaDecayAlerts: alerts.filter(a => a.type === 'THETA_DECAY').length,
-        highPriorityAlerts: alerts.filter(a => a.priority === 'HIGH').length
-      }
-    });
+    return res.json({ alerts });
     
   } catch (error) {
     console.error('Alert generation error:', error);
-    return res.status(500).json({ 
-      error: 'Failed to generate alerts',
-      details: error.message
-    });
+    return res.status(500).json({ error: 'Failed to generate alerts' });
   }
 }
 
-// Black-Scholes Greeks Calculation
+// Greeks calculation function
 function calculateGreeks(option, spot, timeToExpiry = 21/365, riskFreeRate = 0.065) {
   try {
     const S = spot;
     const K = option.strike;
-    const T = Math.max(timeToExpiry, 1/365); // Minimum 1 day
+    const T = Math.max(timeToExpiry, 1/365);
     const r = riskFreeRate;
-    const sigma = Math.max((option.iv || 20) / 100, 0.01); // Minimum 1% IV
+    const sigma = Math.max((option.iv || 20) / 100, 0.01);
     
     if (S <= 0 || K <= 0 || T <= 0 || sigma <= 0) {
       return { delta: 0, gamma: 0, theta: 0, vega: 0 };
@@ -138,7 +122,6 @@ function calculateGreeks(option, spot, timeToExpiry = 21/365, riskFreeRate = 0.0
     const d1 = (Math.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * Math.sqrt(T));
     const d2 = d1 - sigma * Math.sqrt(T);
     
-    // Improved normal CDF approximation (Abramowitz and Stegun)
     const normCDF = (x) => {
       const a1 = 0.254829592;
       const a2 = -0.284496736;
@@ -153,4 +136,34 @@ function calculateGreeks(option, spot, timeToExpiry = 21/365, riskFreeRate = 0.0
       const t = 1.0 / (1.0 + p * x);
       const y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
       
-      return 0.5 * (1.0 + sign *
+      return 0.5 * (1.0 + sign * y);
+    };
+    
+    const normPDF = (x) => {
+      return Math.exp(-0.5 * x * x) / Math.sqrt(2 * Math.PI);
+    };
+    
+    const delta = option.type === 'CE' ? normCDF(d1) : normCDF(d1) - 1;
+    const gamma = normPDF(d1) / (S * sigma * Math.sqrt(T));
+    const vega = S * normPDF(d1) * Math.sqrt(T) / 100;
+    
+    let theta;
+    if (option.type === 'CE') {
+      theta = -(S * normPDF(d1) * sigma) / (2 * Math.sqrt(T)) - r * K * Math.exp(-r * T) * normCDF(d2);
+    } else {
+      theta = -(S * normPDF(d1) * sigma) / (2 * Math.sqrt(T)) + r * K * Math.exp(-r * T) * normCDF(-d2);
+    }
+    
+    const thetaPerDay = theta / 365;
+    
+    return {
+      delta: Number(delta.toFixed(4)),
+      gamma: Number(gamma.toFixed(6)),
+      theta: Number(thetaPerDay.toFixed(4)),
+      vega: Number(vega.toFixed(4))
+    };
+    
+  } catch (error) {
+    return { delta: 0, gamma: 0, theta: 0, vega: 0 };
+  }
+}
