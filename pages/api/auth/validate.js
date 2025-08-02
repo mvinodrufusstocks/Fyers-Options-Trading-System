@@ -23,16 +23,17 @@ export default async function handler(req, res) {
       const appIdHash = `${fyersConfig.appId}:${fyersConfig.secretKey}`;
       
       try {
-        const tokenResponse = await fetch('https://api-t1.fyers.in/api/v3/validate-authcode', {
+        const tokenResponse = await fetch('https://api.fyers.in/api/v2/validate-authcode', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            grant_type: 'authorization_code',
-            appIdHash: appIdHash,
-            code: authCode
-          })
+  code: authCode,
+  client_id: fyersConfig.appId,
+  secret_key: fyersConfig.secretKey,
+  grant_type: 'authorization_code'
+})
         });
 
         const tokenData = await tokenResponse.json();
