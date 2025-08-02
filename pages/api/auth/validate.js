@@ -1,4 +1,5 @@
-import { sql } from '@vercel/postgres';
+// pages/api/auth/validate.js
+import crypto from 'crypto';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -8,61 +9,93 @@ export default async function handler(req, res) {
   try {
     const { tokenInfo, fyersConfig } = req.body;
     
-    if (!fyersConfig.appId || !fyersConfig.secretKey) {
-      return res.status(400).json({ error: 'FYERS APP ID and Secret Key required' });
+    // Check if we have the required config
+    if (!fyersConfig?.appId || !fyersConfig?.secretKey) {
+      return res.status(400).json({ 
+        error: 'Missing FYERS configuration',
+        message: 'Please enter your APP ID and Secret Key'
+      });
     }
 
-    // Check if we have a valid token in the request
-    if (tokenInfo.accessToken && tokenInfo.expiresAt) {
-      const expiryTime = new Date(tokenInfo.expiresAt);
-      const now = new Date();
+    // If there's an auth code in the request, exchange it for a token
+    if (req.body.authCode) {
+      console.log('Exchanging auth code for token...');
       
-      // If token is still valid (not expired), return it
-      if (expiryTime > now) {
-        return res.json({ 
-          valid: true, 
-          tokenInfo: {
-            accessToken: tokenInfo.accessToken,
-            expiresAt: tokenInfo.expiresAt,
-            lastRefresh: tokenInfo.lastRefresh
-          }
+      const appIdHash = crypto.createHash('sha256')
+        .update(fyersConfig.appId + ':' + fyersConfig.secretKey)
+        .digest('hex');
+      
+      const tokenResponse = await fetch('https://api-t1.fyers.in/api/v3/validate-authcode', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          client_id: fyersConfig.appId,
+          secret_key: fyersConfig.secretKey,
+          auth_code: req.body.authCode,
+          appIdHash: appIdHash
+        })
+      });
+
+      const tokenData = await tokenResponse.json();
+      console.log('Token exchange response:', tokenData);
+
+      if (tokenData.code === 200 && tokenData.data?.access_token) {
+        // Token exchange successful
+        const newTokenInfo = {
+          accessToken: tokenData.data.access_token,
+          expiresAt: new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString(), // 7 hours
+          lastRefresh: new Date().toISOString()
+        };
+
+        return res.status(200).json({
+          success: true,
+          tokenInfo: newTokenInfo,
+          message: 'Token obtained successfully'
+        });
+      } else {
+        return res.status(400).json({
+          error: 'Token exchange failed',
+          message: tokenData.message || 'Failed to obtain access token',
+          details: tokenData
         });
       }
     }
-    
-    // Try to get token from database
-    try {
-      const result = await sql`
-        SELECT * FROM tokens 
-        WHERE expires_at > NOW() 
-        ORDER BY created_at DESC 
-        LIMIT 1
-      `;
+
+    // If no auth code but we have a token, validate it
+    if (tokenInfo?.accessToken) {
+      // For now, we'll do a simple check
+      // In production, you'd make an API call to FYERS to validate
+      const tokenAge = tokenInfo.expiresAt 
+        ? new Date(tokenInfo.expiresAt) - new Date() 
+        : -1;
       
-      if (result.rows.length > 0) {
-        const dbToken = result.rows[0];
-        return res.json({ 
-          valid: true, 
-          tokenInfo: {
-            accessToken: dbToken.access_token,
-            expiresAt: dbToken.expires_at,
-            lastRefresh: dbToken.updated_at
-          }
+      if (tokenAge > 0) {
+        return res.status(200).json({
+          success: true,
+          tokenInfo: tokenInfo,
+          message: 'Token is valid'
+        });
+      } else {
+        return res.status(401).json({
+          error: 'Token expired',
+          message: 'Please generate a new auth URL and login again'
         });
       }
-    } catch (dbError) {
-      // Database might not be initialized yet, that's okay
-      console.log('Database not initialized yet:', dbError.message);
     }
-    
-    // No valid token found
-    return res.status(401).json({ 
-      error: 'No valid token found. Please complete FYERS authentication.',
-      needsAuth: true
+
+    // No token and no auth code
+    return res.status(401).json({
+      error: 'No valid token',
+      message: 'Please generate auth URL and complete login'
     });
-    
+
   } catch (error) {
-    console.error('Token validation error:', error);
-    return res.status(500).json({ error: 'Token validation failed' });
+    console.error('Validation error:', error);
+    return res.status(500).json({ 
+      error: 'Validation failed',
+      message: error.message 
+    });
   }
 }
