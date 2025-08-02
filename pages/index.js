@@ -29,6 +29,36 @@ export default function TradingDashboard() {
   const [systemLogs, setSystemLogs] = useState([]);
   const intervalRef = useRef(null);
 
+  // Exchange auth code for access token
+  const exchangeAuthCodeForToken = async (authCode) => {
+    try {
+      const response = await fetch('/api/auth/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          authCode,
+          fyersConfig 
+        })
+      });
+      
+      const data = await response.json();
+      
+      if (response.ok && data.tokenInfo) {
+        setTokenInfo(data.tokenInfo);
+        setConnectionStatus('connected');
+        addLog('Successfully obtained access token!', 'success');
+        // Store in localStorage for persistence
+        localStorage.setItem('fyersToken', JSON.stringify(data.tokenInfo));
+      } else {
+        addLog(`Token exchange failed: ${data.message}`, 'error');
+        setConnectionStatus('error');
+      }
+    } catch (error) {
+      addLog(`Token exchange error: ${error.message}`, 'error');
+      setConnectionStatus('error');
+    }
+  };
+
   // Market Hours Check (IST)
   const isMarketOpen = () => {
     const now = new Date();
@@ -46,18 +76,17 @@ export default function TradingDashboard() {
     return currentMinutes >= marketOpen && currentMinutes <= marketClose;
   };
 
-  // Check for auth code on page load
+  // Load saved token on startup
   useEffect(() => {
-    // Check if we have an auth code in URL (returned from FYERS)
-    const urlParams = new URLSearchParams(window.location.search);
-    const authCode = urlParams.get('auth_code') || urlParams.get('code');
-    
-    if (authCode) {
-      addLog('Auth code detected in URL. Processing...', 'info');
-      // Clear the URL parameters for cleaner display
-      window.history.replaceState({}, document.title, window.location.pathname);
-      // Auto-validate token after receiving auth code
-      setTimeout(() => validateToken(), 1000);
+    const savedToken = localStorage.getItem('fyersToken');
+    if (savedToken) {
+      try {
+        const parsedToken = JSON.parse(savedToken);
+        setTokenInfo(parsedToken);
+        addLog('Loaded saved token from storage', 'info');
+      } catch (e) {
+        console.error('Failed to parse saved token:', e);
+      }
     }
   }, []);
 
