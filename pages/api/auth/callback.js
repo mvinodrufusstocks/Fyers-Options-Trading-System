@@ -1,36 +1,17 @@
-import { sql } from '@vercel/postgres';
-
 export default async function handler(req, res) {
   try {
     const { code, state } = req.query;
     
     if (!code) {
-      return res.status(400).json({ error: 'Authorization code missing' });
+      return res.redirect('/?error=no_code');
     }
 
-    // Get FYERS config from environment variables or request
-    const fyersAppId = process.env.FYERS_APP_ID || req.query.app_id;
-    const fyersSecret = process.env.FYERS_SECRET || req.query.secret;
+    // Get environment variables
+    const fyersAppId = process.env.FYERS_APP_ID;
+    const fyersSecret = process.env.FYERS_SECRET;
     
     if (!fyersAppId || !fyersSecret) {
-      console.error('FYERS credentials missing from environment variables');
-      return res.redirect('/?error=config_missing');
-    }
-
-    // Initialize database tables if they don't exist
-    try {
-      await sql`
-        CREATE TABLE IF NOT EXISTS tokens (
-          id SERIAL PRIMARY KEY,
-          access_token TEXT NOT NULL,
-          refresh_token TEXT,
-          expires_at TIMESTAMP NOT NULL,
-          created_at TIMESTAMP DEFAULT NOW(),
-          updated_at TIMESTAMP DEFAULT NOW()
-        );
-      `;
-    } catch (createError) {
-      console.log('Table might already exist:', createError.message);
+      return res.redirect('/?error=missing_config');
     }
 
     // Exchange authorization code for access token
@@ -50,32 +31,15 @@ export default async function handler(req, res) {
     const tokenData = await tokenResponse.json();
     
     if (tokenData.s === 'ok' && tokenData.access_token) {
-      // Save token to database
-      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours from now
-      
-      try {
-        await sql`
-          INSERT INTO tokens (access_token, refresh_token, expires_at)
-          VALUES (${tokenData.access_token}, ${tokenData.refresh_token || null}, ${expiresAt})
-        `;
-        
-        console.log('Token saved successfully');
-        
-        // Redirect to main app with success
-        return res.redirect('/?auth=success&message=Authentication successful');
-        
-      } catch (dbError) {
-        console.error('Database save error:', dbError);
-        return res.redirect('/?auth=error&message=Database save failed');
-      }
-      
+      // Store token in a way the frontend can access it
+      // For now, redirect back with success
+      return res.redirect('/?auth=success&token=' + encodeURIComponent(tokenData.access_token));
     } else {
-      console.error('Token exchange failed:', tokenData);
-      return res.redirect(`/?auth=error&message=${encodeURIComponent(tokenData.message || 'Token exchange failed')}`);
+      return res.redirect('/?auth=error&message=' + encodeURIComponent(tokenData.message || 'Token exchange failed'));
     }
     
   } catch (error) {
     console.error('OAuth callback error:', error);
-    return res.redirect(`/?auth=error&message=${encodeURIComponent(error.message)}`);
+    return res.redirect('/?auth=error&message=' + encodeURIComponent(error.message));
   }
 }
