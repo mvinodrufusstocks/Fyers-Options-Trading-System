@@ -1,11 +1,8 @@
 // pages/api/auth/callback.js
-import { query } from '../../../lib/db';
-
 export default async function handler(req, res) {
   console.log('Callback API hit:', {
     method: req.method,
-    query: req.query,
-    headers: req.headers
+    query: req.query
   });
 
   if (req.method !== 'GET' && req.method !== 'POST') {
@@ -26,8 +23,7 @@ export default async function handler(req, res) {
 
     console.log('Auth code received:', authCode.substring(0, 20) + '...');
 
-    // For now, we'll redirect to the main page with the auth code
-    // The main page will handle the token exchange
+    // Redirect to the main page with the auth code
     const redirectUrl = `/?auth_code=${encodeURIComponent(authCode)}&state=${state || ''}`;
     
     console.log('Redirecting to:', redirectUrl);
