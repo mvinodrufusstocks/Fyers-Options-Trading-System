@@ -1,0 +1,29 @@
+{
+  "name": "fyers-trading-system",
+  "version": "1.0.0",
+  "description": "Production FYERS Options Trading System with Real-time Alerts",
+  "main": "pages/index.js",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "next": "14.0.0",
+    "react": "18.2.0",
+    "react-dom": "18.2.0",
+    "pg": "^8.11.3",
+    "next-auth": "^4.24.5",
+    "axios": "^1.6.0",
+    "@vercel/postgres": "^0.5.1",
+    "crypto-js": "^4.2.0"
+  },
+  "devDependencies": {
+    "autoprefixer": "^10.4.16",
+    "eslint": "^8.54.0",
+    "eslint-config-next": "14.0.0",
+    "postcss": "^8.4.31",
+    "tailwindcss": "^3.3.5"
+  }
+}
