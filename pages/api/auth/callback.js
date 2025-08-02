@@ -2,11 +2,19 @@ export default async function handler(req, res) {
   try {
     console.log('Callback received:', req.query);
     
-    const { code, state } = req.query;
+    const { code, auth_code, s } = req.query;
     
-    if (!code) {
-      console.log('No code in query');
-      return res.redirect('/?error=no_code');
+    // FYERS sends auth_code, not code
+    const authCode = auth_code || code;
+    
+    if (!authCode) {
+      console.log('No auth code in query');
+      return res.redirect('/?error=no_auth_code');
+    }
+
+    if (s !== 'ok') {
+      console.log('FYERS auth failed, status:', s);
+      return res.redirect('/?error=fyers_auth_failed');
     }
 
     const fyersAppId = process.env.FYERS_APP_ID;
@@ -22,7 +30,7 @@ export default async function handler(req, res) {
       return res.redirect('/?error=missing_credentials');
     }
 
-    console.log('Making token request to FYERS...');
+    console.log('Making token request to FYERS with auth_code...');
     
     // Exchange authorization code for access token
     const tokenResponse = await fetch('https://api-t1.fyers.in/api/v3/token', {
@@ -34,24 +42,25 @@ export default async function handler(req, res) {
         grant_type: 'authorization_code',
         appid: fyersAppId,
         secret: fyersSecret,
-        code: code
+        code: authCode  // Use the auth_code from FYERS
       })
     });
 
     if (!tokenResponse.ok) {
       console.log('Token request failed:', tokenResponse.status);
-      return res.redirect('/?error=token_request_failed');
+      return res.redirect('/?error=token_request_failed&status=' + tokenResponse.status);
     }
 
     const tokenData = await tokenResponse.json();
-    console.log('Token response status:', tokenData.s);
+    console.log('Token response:', tokenData);
     
     if (tokenData.s === 'ok' && tokenData.access_token) {
-      console.log('Authentication successful!');
-      return res.redirect('/?auth=success&message=Connected to FYERS successfully');
+      console.log('🎉 Authentication successful!');
+      // Store token in URL for now (we'll improve this later)
+      return res.redirect('/?auth=success&message=Connected to FYERS successfully&token=received');
     } else {
       console.log('Token exchange failed:', tokenData);
-      return res.redirect('/?auth=error&message=' + encodeURIComponent(tokenData.message || 'Authentication failed'));
+      return res.redirect('/?auth=error&message=' + encodeURIComponent(tokenData.message || 'Token exchange failed'));
     }
     
   } catch (error) {
