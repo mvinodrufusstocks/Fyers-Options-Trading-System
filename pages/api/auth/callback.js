@@ -1,22 +1,55 @@
 // pages/api/auth/callback.js
+import { query } from '../../../lib/db';
+
 export default async function handler(req, res) {
-  console.log('Callback hit!', req.method, req.query);
-  
-  // Handle both GET and POST
+  console.log('Callback API hit:', {
+    method: req.method,
+    query: req.query,
+    headers: req.headers
+  });
+
   if (req.method !== 'GET' && req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { code, auth_code, s } = req.query;
-  const authCode = code || auth_code;
+  try {
+    const { code, auth_code, s, state } = req.query;
+    const authCode = code || auth_code;
 
-  if (!authCode) {
-    return res.status(400).json({ 
-      error: 'Missing auth code',
-      query: req.query 
+    if (!authCode) {
+      console.error('No auth code received');
+      return res.status(400).json({ 
+        error: 'Missing auth code',
+        receivedQuery: req.query 
+      });
+    }
+
+    console.log('Auth code received:', authCode.substring(0, 20) + '...');
+
+    // For now, we'll redirect to the main page with the auth code
+    // The main page will handle the token exchange
+    const redirectUrl = `/?auth_code=${encodeURIComponent(authCode)}&state=${state || ''}`;
+    
+    console.log('Redirecting to:', redirectUrl);
+    
+    // Use HTML meta refresh as backup
+    res.status(200).send(`
+      <html>
+        <head>
+          <meta http-equiv="refresh" content="0;url=${redirectUrl}">
+        </head>
+        <body>
+          <p>Authentication successful! Redirecting...</p>
+          <p>If you're not redirected, <a href="${redirectUrl}">click here</a>.</p>
+        </body>
+      </html>
+    `);
+
+  } catch (error) {
+    console.error('Callback error:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      message: error.message 
     });
   }
-
-  // Your existing token exchange logic here...
-  res.redirect('/');
 }
