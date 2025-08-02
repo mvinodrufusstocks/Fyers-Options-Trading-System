@@ -14,7 +14,7 @@ export default function TradingDashboard() {
   const [fyersConfig, setFyersConfig] = useState({
     appId: '',
     secretKey: '',
-    redirectUri: typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : ''
+    redirectUri: typeof window !== 'undefined' ? `${window.location.origin}/api/auth/callback` : ''
   });
 
   const [tradingConfig, setTradingConfig] = useState({
@@ -46,6 +46,21 @@ export default function TradingDashboard() {
     return currentMinutes >= marketOpen && currentMinutes <= marketClose;
   };
 
+  // Check for auth code on page load
+  useEffect(() => {
+    // Check if we have an auth code in URL (returned from FYERS)
+    const urlParams = new URLSearchParams(window.location.search);
+    const authCode = urlParams.get('auth_code') || urlParams.get('code');
+    
+    if (authCode) {
+      addLog('Auth code detected in URL. Processing...', 'info');
+      // Clear the URL parameters for cleaner display
+      window.history.replaceState({}, document.title, window.location.pathname);
+      // Auto-validate token after receiving auth code
+      setTimeout(() => validateToken(), 1000);
+    }
+  }, []);
+
   // Token validation
   const validateToken = async () => {
     try {
@@ -73,7 +88,7 @@ export default function TradingDashboard() {
     }
   };
 
-  // Generate FYERS auth URL
+  // Generate FYERS auth URL - UPDATED TO USE SAME WINDOW
   const generateAuthUrl = () => {
     if (!fyersConfig.appId) {
       addLog('Please enter FYERS APP ID first', 'error');
@@ -87,8 +102,9 @@ export default function TradingDashboard() {
       `response_type=code&` +
       `state=${state}`;
     
-    window.open(authUrl, '_blank', 'width=600,height=700');
-    addLog('Auth URL opened. Complete OAuth flow in popup window.', 'info');
+    // Navigate in the same window instead of popup
+    addLog('Redirecting to FYERS for authentication...', 'info');
+    window.location.href = authUrl;
   };
 
   // Main monitoring function
