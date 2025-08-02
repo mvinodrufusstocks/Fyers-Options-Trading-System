@@ -11,11 +11,9 @@ export default function TradingDashboard() {
     lastRefresh: null
   });
   
-  const [fyersConfig, setFyersConfig] = useState({
-    appId: '',
-    secretKey: '',
-    redirectUri: typeof window !== 'undefined' ? `${window.location.origin}/api/auth/callback` : ''
-  });
+  const [appId, setAppId] = useState('');
+  const [secretKey, setSecretKey] = useState('');
+  const [redirectUri, setRedirectUri] = useState('');
 
   const [tradingConfig, setTradingConfig] = useState({
     symbols: ['NSE:NIFTY50-INDEX', 'NSE:NIFTYBANK-INDEX', 'NSE:FINNIFTY-INDEX'],
@@ -29,33 +27,48 @@ export default function TradingDashboard() {
   const [systemLogs, setSystemLogs] = useState([]);
   const intervalRef = useRef(null);
 
+  // Set redirect URI after component mounts
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setRedirectUri(`${window.location.origin}/api/auth/callback`);
+    }
+  }, []);
+
   // Load saved token on startup
   useEffect(() => {
-    const savedToken = localStorage.getItem('fyersToken');
-    if (savedToken) {
-      try {
-        const parsedToken = JSON.parse(savedToken);
-        setTokenInfo(parsedToken);
-        addLog('Loaded saved token from storage', 'info');
-      } catch (e) {
-        console.error('Failed to parse saved token:', e);
+    if (typeof window !== 'undefined') {
+      const savedToken = localStorage.getItem('fyersToken');
+      const savedAppId = localStorage.getItem('fyersAppId');
+      const savedSecretKey = localStorage.getItem('fyersSecretKey');
+      
+      if (savedToken) {
+        try {
+          const parsedToken = JSON.parse(savedToken);
+          setTokenInfo(parsedToken);
+          addLog('Loaded saved token from storage', 'info');
+        } catch (e) {
+          console.error('Failed to parse saved token:', e);
+        }
       }
+      
+      if (savedAppId) setAppId(savedAppId);
+      if (savedSecretKey) setSecretKey(savedSecretKey);
     }
   }, []);
 
   // Check for auth code on page load
   useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const authCode = urlParams.get('auth_code') || urlParams.get('code');
-    
-    if (authCode && fyersConfig.appId && fyersConfig.secretKey) {
-      addLog('Auth code detected. Exchanging for access token...', 'info');
-      // Clear the URL parameters
-      window.history.replaceState({}, document.title, window.location.pathname);
-      // Exchange auth code for token
-      exchangeAuthCodeForToken(authCode);
+    if (typeof window !== 'undefined' && appId && secretKey) {
+      const urlParams = new URLSearchParams(window.location.search);
+      const authCode = urlParams.get('auth_code') || urlParams.get('code');
+      
+      if (authCode) {
+        addLog('Auth code detected. Exchanging for access token...', 'info');
+        window.history.replaceState({}, document.title, window.location.pathname);
+        exchangeAuthCodeForToken(authCode);
+      }
     }
-  }, [fyersConfig.appId, fyersConfig.secretKey]);
+  }, [appId, secretKey]);
 
   // Market Hours Check (IST)
   const isMarketOpen = () => {
@@ -82,7 +95,11 @@ export default function TradingDashboard() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           authCode,
-          fyersConfig 
+          fyersConfig: {
+            appId,
+            secretKey,
+            redirectUri
+          }
         })
       });
       
@@ -92,7 +109,6 @@ export default function TradingDashboard() {
         setTokenInfo(data.tokenInfo);
         setConnectionStatus('connected');
         addLog('Successfully obtained access token!', 'success');
-        // Store in localStorage for persistence
         localStorage.setItem('fyersToken', JSON.stringify(data.tokenInfo));
       } else {
         addLog(`Token exchange failed: ${data.message}`, 'error');
@@ -110,7 +126,14 @@ export default function TradingDashboard() {
       const response = await fetch('/api/auth/validate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tokenInfo, fyersConfig })
+        body: JSON.stringify({ 
+          tokenInfo, 
+          fyersConfig: {
+            appId,
+            secretKey,
+            redirectUri
+          }
+        })
       });
       
       if (response.ok) {
@@ -118,7 +141,6 @@ export default function TradingDashboard() {
         setConnectionStatus('connected');
         setTokenInfo(data.tokenInfo);
         addLog('Token validated successfully', 'success');
-        // Update localStorage
         localStorage.setItem('fyersToken', JSON.stringify(data.tokenInfo));
         return true;
       } else {
@@ -133,21 +155,24 @@ export default function TradingDashboard() {
     }
   };
 
-  // Generate FYERS auth URL - UPDATED TO USE SAME WINDOW
+  // Generate FYERS auth URL
   const generateAuthUrl = () => {
-    if (!fyersConfig.appId) {
+    if (!appId) {
       addLog('Please enter FYERS APP ID first', 'error');
       return;
     }
     
+    // Save credentials
+    localStorage.setItem('fyersAppId', appId);
+    localStorage.setItem('fyersSecretKey', secretKey);
+    
     const state = `auth_${Date.now()}`;
     const authUrl = `https://api-t1.fyers.in/api/v3/generate-authcode?` +
-      `client_id=${fyersConfig.appId}&` +
-      `redirect_uri=${encodeURIComponent(fyersConfig.redirectUri)}&` +
+      `client_id=${appId}&` +
+      `redirect_uri=${encodeURIComponent(redirectUri)}&` +
       `response_type=code&` +
       `state=${state}`;
     
-    // Navigate in the same window instead of popup
     addLog('Redirecting to FYERS for authentication...', 'info');
     window.location.href = authUrl;
   };
@@ -175,7 +200,11 @@ export default function TradingDashboard() {
           body: JSON.stringify({ 
             symbol, 
             tokenInfo, 
-            fyersConfig 
+            fyersConfig: {
+              appId,
+              secretKey,
+              redirectUri
+            }
           })
         });
 
@@ -289,8 +318,8 @@ export default function TradingDashboard() {
                   <label className="block text-sm font-medium mb-1 text-gray-700">APP ID</label>
                   <input
                     type="text"
-                    value={fyersConfig.appId}
-                    onChange={(e) => setFyersConfig({...fyersConfig, appId: e.target.value})}
+                    value={appId}
+                    onChange={(e) => setAppId(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="Your FYERS APP ID"
                   />
@@ -300,8 +329,8 @@ export default function TradingDashboard() {
                   <label className="block text-sm font-medium mb-1 text-gray-700">Secret Key</label>
                   <input
                     type="password"
-                    value={fyersConfig.secretKey}
-                    onChange={(e) => setFyersConfig({...fyersConfig, secretKey: e.target.value})}
+                    value={secretKey}
+                    onChange={(e) => setSecretKey(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="Your FYERS Secret Key"
                   />
@@ -311,7 +340,7 @@ export default function TradingDashboard() {
                   <label className="block text-sm font-medium mb-1 text-gray-700">Redirect URI</label>
                   <input
                     type="text"
-                    value={fyersConfig.redirectUri}
+                    value={redirectUri}
                     readOnly
                     className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-sm"
                   />
