@@ -29,6 +29,51 @@ export default function TradingDashboard() {
   const [systemLogs, setSystemLogs] = useState([]);
   const intervalRef = useRef(null);
 
+  // Load saved token on startup
+  useEffect(() => {
+    const savedToken = localStorage.getItem('fyersToken');
+    if (savedToken) {
+      try {
+        const parsedToken = JSON.parse(savedToken);
+        setTokenInfo(parsedToken);
+        addLog('Loaded saved token from storage', 'info');
+      } catch (e) {
+        console.error('Failed to parse saved token:', e);
+      }
+    }
+  }, []);
+
+  // Check for auth code on page load
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const authCode = urlParams.get('auth_code') || urlParams.get('code');
+    
+    if (authCode && fyersConfig.appId && fyersConfig.secretKey) {
+      addLog('Auth code detected. Exchanging for access token...', 'info');
+      // Clear the URL parameters
+      window.history.replaceState({}, document.title, window.location.pathname);
+      // Exchange auth code for token
+      exchangeAuthCodeForToken(authCode);
+    }
+  }, [fyersConfig.appId, fyersConfig.secretKey]);
+
+  // Market Hours Check (IST)
+  const isMarketOpen = () => {
+    const now = new Date();
+    const istTime = new Date(now.toLocaleString("en-US", {timeZone: "Asia/Kolkata"}));
+    const hour = istTime.getHours();
+    const minute = istTime.getMinutes();
+    const day = istTime.getDay();
+    
+    if (day === 0 || day === 6) return false;
+    
+    const currentMinutes = hour * 60 + minute;
+    const marketOpen = 9 * 60 + 15; // 9:15 AM
+    const marketClose = 15 * 60 + 30; // 3:30 PM
+    
+    return currentMinutes >= marketOpen && currentMinutes <= marketClose;
+  };
+
   // Exchange auth code for access token
   const exchangeAuthCodeForToken = async (authCode) => {
     try {
@@ -59,37 +104,6 @@ export default function TradingDashboard() {
     }
   };
 
-  // Market Hours Check (IST)
-  const isMarketOpen = () => {
-    const now = new Date();
-    const istTime = new Date(now.toLocaleString("en-US", {timeZone: "Asia/Kolkata"}));
-    const hour = istTime.getHours();
-    const minute = istTime.getMinutes();
-    const day = istTime.getDay();
-    
-    if (day === 0 || day === 6) return false;
-    
-    const currentMinutes = hour * 60 + minute;
-    const marketOpen = 9 * 60 + 15; // 9:15 AM
-    const marketClose = 15 * 60 + 30; // 3:30 PM
-    
-    return currentMinutes >= marketOpen && currentMinutes <= marketClose;
-  };
-
-  // Load saved token on startup
-  useEffect(() => {
-    const savedToken = localStorage.getItem('fyersToken');
-    if (savedToken) {
-      try {
-        const parsedToken = JSON.parse(savedToken);
-        setTokenInfo(parsedToken);
-        addLog('Loaded saved token from storage', 'info');
-      } catch (e) {
-        console.error('Failed to parse saved token:', e);
-      }
-    }
-  }, []);
-
   // Token validation
   const validateToken = async () => {
     try {
@@ -104,6 +118,8 @@ export default function TradingDashboard() {
         setConnectionStatus('connected');
         setTokenInfo(data.tokenInfo);
         addLog('Token validated successfully', 'success');
+        // Update localStorage
+        localStorage.setItem('fyersToken', JSON.stringify(data.tokenInfo));
         return true;
       } else {
         setConnectionStatus('token_expired');
