@@ -19,25 +19,25 @@ export default async function handler(req, res) {
     if (authCode) {
       console.log('Exchanging auth code for token...');
       
-      // Create the app ID hash for FYERS API
-      const appIdHash = `${fyersConfig.appId}:${fyersConfig.secretKey}`;
+      // FYERS v2 API format
+      const params = new URLSearchParams({
+        code: authCode,
+        client_id: fyersConfig.appId,
+        secret_key: fyersConfig.secretKey,
+        grant_type: 'authorization_code'
+      });
       
       try {
         const tokenResponse = await fetch('https://api.fyers.in/api/v2/validate-authcode', {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/x-www-form-urlencoded',
           },
-          body: JSON.stringify({
-  code: authCode,
-  client_id: fyersConfig.appId,
-  secret_key: fyersConfig.secretKey,
-  grant_type: 'authorization_code'
-})
+          body: params.toString()
         });
 
         const tokenData = await tokenResponse.json();
-        console.log('Token exchange response status:', tokenResponse.status);
+        console.log('Token exchange response:', tokenData);
 
         if (tokenData.s === 'ok' && tokenData.data?.access_token) {
           // Token exchange successful
@@ -53,6 +53,7 @@ export default async function handler(req, res) {
             message: 'Token obtained successfully'
           });
         } else {
+          console.error('FYERS error response:', tokenData);
           return res.status(400).json({
             error: 'Token exchange failed',
             message: tokenData.message || 'Failed to obtain access token',
