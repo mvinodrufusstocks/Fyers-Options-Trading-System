@@ -1,5 +1,4 @@
-// pages/api/auth/validate.js - Multiple token exchange methods
-import crypto from 'crypto';
+// pages/api/auth/validate.js - Fixed version without import issues
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -21,11 +20,15 @@ export default async function handler(req, res) {
     console.log('Secret present:', secretKey ? 'Yes' : 'No');
     console.log('Auth code present:', auth_code ? 'Yes' : 'No');
 
-    // Method 1: Try with generated appIdHash (SHA256 of appId:secret)
+    // Method 1: Try with generated appIdHash (using built-in crypto)
     try {
       console.log('Trying Method 1: Generated App Hash...');
       
+      // Use built-in Node.js crypto without import
+      const crypto = require('crypto');
       const appIdHash = crypto.createHash('sha256').update(`${appId}:${secretKey}`).digest('hex');
+      
+      console.log('Generated app hash (first 8 chars):', appIdHash.substring(0, 8) + '...');
       
       const tokenData1 = {
         grant_type: "authorization_code",
@@ -42,6 +45,7 @@ export default async function handler(req, res) {
       });
 
       const result1 = await response1.json();
+      console.log('Method 1 Response Status:', response1.status);
       console.log('Method 1 Response:', result1);
 
       if (response1.ok && result1.code === 200) {
@@ -78,6 +82,7 @@ export default async function handler(req, res) {
       });
 
       const result2 = await response2.json();
+      console.log('Method 2 Response Status:', response2.status);
       console.log('Method 2 Response:', result2);
 
       if (response2.ok && result2.code === 200) {
@@ -113,6 +118,7 @@ export default async function handler(req, res) {
       });
 
       const result3 = await response3.json();
+      console.log('Method 3 Response Status:', response3.status);
       console.log('Method 3 Response:', result3);
 
       if (response3.ok && result3.code === 200) {
@@ -148,6 +154,7 @@ export default async function handler(req, res) {
         });
 
         const result4 = await response4.json();
+        console.log('Method 4 Response Status:', response4.status);
         console.log('Method 4 Response:', result4);
 
         if (response4.ok && result4.code === 200) {
@@ -164,11 +171,14 @@ export default async function handler(req, res) {
       }
     }
 
-    // If all methods fail
+    // If all methods fail, return detailed error info
     console.log('❌ All token exchange methods failed');
     return res.status(400).json({
       error: 'All token exchange methods failed',
-      message: 'Please check your FYERS app credentials and permissions'
+      message: 'Please check your FYERS app credentials and permissions',
+      appId: appId ? 'Present' : 'Missing',
+      secret: secretKey ? 'Present' : 'Missing',
+      timestamp: new Date().toISOString()
     });
 
   } catch (error) {
@@ -178,4 +188,4 @@ export default async function handler(req, res) {
       details: error.message 
     });
   }
-},
+}
