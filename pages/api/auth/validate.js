@@ -1,191 +1,49 @@
-// pages/api/auth/validate.js - Fixed version without import issues
-
+// pages/api/auth/validate.js
 export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   try {
-    const { auth_code } = req.body;
+    const { auth_code } = req.body || {};
+    if (!auth_code) return res.status(400).json({ error: 'Auth code is required' });
 
-    if (!auth_code) {
-      return res.status(400).json({ error: 'Auth code is required' });
+    const APP_ID = process.env.FYERS_APP_ID;
+    const APP_SECRET = process.env.FYERS_APP_SECRET;
+    const REDIRECT_URI = process.env.FYERS_REDIRECT_URI || ''; // optional, but must match if you include it
+
+    if (!APP_ID || !APP_SECRET) {
+      return res.status(500).json({ error: 'Missing server credentials', have: { APP_ID: !!APP_ID, APP_SECRET: !!APP_SECRET } });
     }
 
-    const appId = process.env.FYERS_APP_ID;
-    const secretKey = process.env.FYERS_SECRET;
+    // Compute appIdHash = sha256("<APP_ID>:<APP_SECRET>") hex
+    const encoder = new TextEncoder();
+    const data = encoder.encode(`${APP_ID}:${APP_SECRET}`); // NOTE the colon
+    const digest = await crypto.subtle.digest('SHA-256', data);
+    const hash = Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
 
-    console.log('Starting token exchange process...');
-    console.log('App ID present:', appId ? 'Yes' : 'No');
-    console.log('Secret present:', secretKey ? 'Yes' : 'No');
-    console.log('Auth code present:', auth_code ? 'Yes' : 'No');
+    const body = {
+      grant_type: 'authorization_code',
+      appIdHash: hash,
+      code: auth_code,
+      // Uncomment if FYERS requires explicit redirect URI match in your app:
+      // redirect_uri: REDIRECT_URI
+    };
 
-    // Method 1: Try with generated appIdHash (using built-in crypto)
-    try {
-      console.log('Trying Method 1: Generated App Hash...');
-      
-      // Use built-in Node.js crypto without import
-      const crypto = require('crypto');
-      const appIdHash = crypto.createHash('sha256').update(`${appId}:${secretKey}`).digest('hex');
-      
-      console.log('Generated app hash (first 8 chars):', appIdHash.substring(0, 8) + '...');
-      
-      const tokenData1 = {
-        grant_type: "authorization_code",
-        appIdHash: appIdHash,
-        code: auth_code
-      };
-
-      const response1 = await fetch('https://api-t1.fyers.in/api/v3/token', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(tokenData1)
-      });
-
-      const result1 = await response1.json();
-      console.log('Method 1 Response Status:', response1.status);
-      console.log('Method 1 Response:', result1);
-
-      if (response1.ok && result1.code === 200) {
-        console.log('✅ Method 1 SUCCESS - Token exchange successful!');
-        return res.status(200).json({
-          success: true,
-          access_token: result1.access_token,
-          expires_in: result1.expires_in || 3600,
-          method_used: 'Generated App Hash'
-        });
-      }
-    } catch (error) {
-      console.log('Method 1 failed:', error.message);
-    }
-
-    // Method 2: Try with Basic Auth header
-    try {
-      console.log('Trying Method 2: Basic Auth...');
-      
-      const basicAuth = Buffer.from(`${appId}:${secretKey}`).toString('base64');
-      
-      const tokenData2 = {
-        grant_type: "authorization_code",
-        code: auth_code
-      };
-
-      const response2 = await fetch('https://api-t1.fyers.in/api/v3/token', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Basic ${basicAuth}`
-        },
-        body: JSON.stringify(tokenData2)
-      });
-
-      const result2 = await response2.json();
-      console.log('Method 2 Response Status:', response2.status);
-      console.log('Method 2 Response:', result2);
-
-      if (response2.ok && result2.code === 200) {
-        console.log('✅ Method 2 SUCCESS - Token exchange successful!');
-        return res.status(200).json({
-          success: true,
-          access_token: result2.access_token,
-          expires_in: result2.expires_in || 3600,
-          method_used: 'Basic Auth'
-        });
-      }
-    } catch (error) {
-      console.log('Method 2 failed:', error.message);
-    }
-
-    // Method 3: Try with appId and secret in body
-    try {
-      console.log('Trying Method 3: App credentials in body...');
-      
-      const tokenData3 = {
-        grant_type: "authorization_code",
-        appId: appId,
-        secret: secretKey,
-        code: auth_code
-      };
-
-      const response3 = await fetch('https://api-t1.fyers.in/api/v3/token', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(tokenData3)
-      });
-
-      const result3 = await response3.json();
-      console.log('Method 3 Response Status:', response3.status);
-      console.log('Method 3 Response:', result3);
-
-      if (response3.ok && result3.code === 200) {
-        console.log('✅ Method 3 SUCCESS - Token exchange successful!');
-        return res.status(200).json({
-          success: true,
-          access_token: result3.access_token,
-          expires_in: result3.expires_in || 3600,
-          method_used: 'Credentials in body'
-        });
-      }
-    } catch (error) {
-      console.log('Method 3 failed:', error.message);
-    }
-
-    // Method 4: Try with environment variable App Hash (if you have it)
-    if (process.env.FYERS_APP_HASH) {
-      try {
-        console.log('Trying Method 4: Environment App Hash...');
-        
-        const tokenData4 = {
-          grant_type: "authorization_code",
-          appIdHash: process.env.FYERS_APP_HASH,
-          code: auth_code
-        };
-
-        const response4 = await fetch('https://api-t1.fyers.in/api/v3/token', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(tokenData4)
-        });
-
-        const result4 = await response4.json();
-        console.log('Method 4 Response Status:', response4.status);
-        console.log('Method 4 Response:', result4);
-
-        if (response4.ok && result4.code === 200) {
-          console.log('✅ Method 4 SUCCESS - Token exchange successful!');
-          return res.status(200).json({
-            success: true,
-            access_token: result4.access_token,
-            expires_in: result4.expires_in || 3600,
-            method_used: 'Environment App Hash'
-          });
-        }
-      } catch (error) {
-        console.log('Method 4 failed:', error.message);
-      }
-    }
-
-    // If all methods fail, return detailed error info
-    console.log('❌ All token exchange methods failed');
-    return res.status(400).json({
-      error: 'All token exchange methods failed',
-      message: 'Please check your FYERS app credentials and permissions',
-      appId: appId ? 'Present' : 'Missing',
-      secret: secretKey ? 'Present' : 'Missing',
-      timestamp: new Date().toISOString()
+    const r = await fetch('https://api.fyers.in/api/v2/validate-authcode', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
     });
 
-  } catch (error) {
-    console.error('Token exchange error:', error);
-    return res.status(500).json({ 
-      error: 'Internal server error',
-      details: error.message 
-    });
+    const json = await r.json().catch(() => ({}));
+    if (!r.ok || json.s === 'error' || json.code >= 400) {
+      return res.status(400).json({ error: 'FYERS exchange failed', fyers: json });
+    }
+
+    // Expect json.access_token (+ refresh?) depending on FYERS; store securely.
+    // TODO: Persist in Neon (encrypt or at least restrict access).
+    return res.status(200).json({ ok: true, token: !!json.access_token, fyers: json });
+
+  } catch (err) {
+    return res.status(500).json({ error: 'Internal error', detail: String(err?.message || err) });
   }
 }
